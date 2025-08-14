@@ -15,8 +15,10 @@
         SHOWINTASKBAR="yes"
         SINGLEINSTANCE="yes"
         SYSMENU="yes"
-        WINDOWSTATE="normal">
+        WINDOWSTATE="normal"
+        SCROLL="no">
     <style>
+        html, body { overflow: hidden; }
         body {
             font-family: "Meiryo UI", sans-serif;
             font-size: 12px;
@@ -24,15 +26,13 @@
             background-color: #f0f0f0;
         }
         .container {
-            max-width: 500px;
+            max-width: 600px;
             background-color: white;
             padding: 15px;
             border: 1px solid #ccc;
             border-radius: 5px;
         }
-        .form-group {
-            margin-bottom: 10px;
-        }
+        .form-group { margin-bottom: 10px; }
         .form-group label {
             display: block;
             margin-bottom: 3px;
@@ -51,10 +51,7 @@
             font-family: "Consolas", monospace;
             font-size: 11px;
         }
-        .button-group {
-            text-align: center;
-            margin-top: 15px;
-        }
+        .button-group { text-align: center; margin-top: 15px; }
         .button-group button {
             margin: 0 5px;
             padding: 8px 15px;
@@ -62,33 +59,15 @@
             background-color: #f9f9f9;
             cursor: pointer;
         }
-        .button-group button:hover {
-            background-color: #e9e9e9;
-        }
-        .checkbox-group {
-            margin: 5px 0;
-        }
-        .path-input {
-            width: 85%;
-            display: inline-block;
-        }
-        .browse-btn {
-            width: 13%;
-            padding: 3px;
-            display: inline-block;
-            margin-left: 2px;
-        }
+        .button-group button:hover { background-color: #e9e9e9; }
+        .checkbox-group { margin: 5px 0; }
+        .path-input { width: 85%; display: inline-block; }
+        .browse-btn { width: 13%; padding: 3px; display: inline-block; margin-left: 2px; }
         .file-list-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 3px;
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;
         }
         .update-btn {
-            padding: 2px 8px;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
-            cursor: pointer;
+            padding: 2px 8px; border: 1px solid #ccc; background-color: #f9f9f9; cursor: pointer;
         }
     </style>
 </head>
@@ -108,7 +87,7 @@
         </div>
         
         <div class="form-group">
-            <label>移動先</label>
+            <label>移動先（ベース）</label>
             <input type="text" id="destinationFolder" class="path-input" value="F:\">
             <button type="button" class="browse-btn" onclick="selectDestinationFolder()">フォルダ選択</button>
         </div>
@@ -151,41 +130,72 @@
     </div>
 
 <script>
-// === 設定エリア（メモ帳で編集可能） ===
-var DEFAULT_DESTINATION = "F:\\"; // デフォルト移動先フォルダ
-var SUPPORTED_EXTENSIONS = ["pdf", "xlsx", "docx", "jpg", "png", "txt"]; // 対応拡張子
+// === 設定エリア ===
+var DEFAULT_DESTINATION = "F:\\";
+var SUPPORTED_EXTENSIONS = ["pdf", "xlsx", "docx", "jpg", "png", "txt"];
 // === 設定エリア終了 ===
 
-var fso = new ActiveXObject("Scripting.FileSystemObject");
+var fso   = new ActiveXObject("Scripting.FileSystemObject");
 var shell = new ActiveXObject("Shell.Application");
 
-// 初期化
-window.onload = function() {
-    document.getElementById("dateField").value = getCurrentDate();
+// 互換ヘルパー（ES5未実装対策）
+function trim(s){ s = String(s); return s.replace(/^\s+|\s+$/g, ""); }
+function notEmpty(s){ return trim(s) !== ""; }
+function splitNonEmptyLines(text){
+  var lines = String(text).replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
+  var out = [], i;
+  for(i=0;i<lines.length;i++){
+    var t = trim(lines[i]);
+    if (t !== "") out.push(t);
+  }
+  return out;
+}
+
+// ゼロ埋め2桁
+function z2(n){ n = String(n); return n.length < 2 ? "0"+n : n; }
+
+// onload：日付セット・サイズ調整
+window.onload = function () {
+  document.getElementById("dateField").value = getCurrentDate();
+  var W = 760, H = 640;
+  window.resizeTo(W, H);
+  var x = (screen.availWidth  - W) / 2;
+  var y = (screen.availHeight - H) / 2;
+  window.moveTo(x, y);
 };
 
-// リネーム入力欄の表示/非表示切り替え
+// リネーム入力欄の表示/非表示
 function toggleRenameInput() {
     var renameOption = document.getElementById("renameOption").checked;
     var renameInputGroup = document.getElementById("renameInputGroup");
-    
-    if (renameOption) {
-        renameInputGroup.style.display = "block";
-    } else {
-        renameInputGroup.style.display = "none";
-    }
+    renameInputGroup.style.display = renameOption ? "block" : "none";
 }
 
-// 現在日付取得
+// 現在日付（UI表示用、YYYY/MM/DD）
 function getCurrentDate() {
     var now = new Date();
     var year = now.getFullYear();
-    var month = String(now.getMonth() + 1).padStart(2, '0');
-    var day = String(now.getDate()).padStart(2, '0');
+    var month = z2(now.getMonth() + 1);
+    var day = z2(now.getDate());
     return year + "/" + month + "/" + day;
 }
 
-// フォルダ選択ダイアログ
+// 実ファイル保存用：日付フォルダを作って返す（YYYY-M\YYYY-M-D）
+function buildDateFolders(baseDir){
+  var now = new Date();
+  var y = now.getFullYear();
+  var m = now.getMonth() + 1; // 例通りゼロ埋めしない（8, 14）
+  var d = now.getDate();
+  var ym  = y + "-" + m;
+  var ymd = y + "-" + m + "-" + d;
+  var level1 = baseDir + "\\" + ym;
+  var level2 = level1 + "\\" + ymd;
+  if (!fso.FolderExists(level1)) createFolderRecursive(level1);
+  if (!fso.FolderExists(level2)) createFolderRecursive(level2);
+  return level2;
+}
+
+// フォルダ選択
 function selectSourceFolder() {
     var folder = shell.BrowseForFolder(0, "移動元フォルダを選択してください", 0);
     if (folder != null) {
@@ -193,7 +203,6 @@ function selectSourceFolder() {
         updateFileList();
     }
 }
-
 function selectDestinationFolder() {
     var folder = shell.BrowseForFolder(0, "移動先フォルダを選択してください", 0);
     if (folder != null) {
@@ -206,184 +215,125 @@ function updateFileList() {
     var sourceFolder = document.getElementById("sourceFolder").value;
     var fileType = document.getElementById("fileTypeFilter").value;
     var fileListArea = document.getElementById("fileList");
-    
-    if (!sourceFolder) {
-        alert("移動元フォルダを選択してください。");
-        return;
-    }
-    
-    if (!fso.FolderExists(sourceFolder)) {
-        alert("指定されたフォルダが存在しません。");
-        return;
-    }
-    
+    if (!notEmpty(sourceFolder)) { alert("移動元フォルダを選択してください。"); return; }
+    if (!fso.FolderExists(sourceFolder)) { alert("指定されたフォルダが存在しません。"); return; }
+
     try {
         var folder = fso.GetFolder(sourceFolder);
         var files = new Enumerator(folder.files);
         var fileList = [];
-        
         for (; !files.atEnd(); files.moveNext()) {
             var file = files.item();
             var ext = fso.GetExtensionName(file.Name).toLowerCase();
-            
-            if (fileType === "*" || ext === fileType) {
-                fileList.push(file.Name);
-            }
+            if (fileType === "*" || ext === fileType) fileList.push(file.Name);
         }
-        
+        fileList.sort(function(a,b){
+          a=a.toLowerCase(); b=b.toLowerCase();
+          return a < b ? -1 : (a > b ? 1 : 0);
+        });
         fileListArea.value = fileList.join("\n");
-        
     } catch (e) {
         alert("ファイル一覧の取得中にエラーが発生しました: " + e.message);
     }
 }
 
-// ファイル移動処理
-function startMove() {
-    var sourceFolder = document.getElementById("sourceFolder").value;
-    var destinationFolder = document.getElementById("destinationFolder").value;
-    var fileListText = document.getElementById("fileList").value;
-    var renameEnabled = document.getElementById("renameOption").checked;
-    var newFileName = document.getElementById("newFileName").value;
-    
-    if (!sourceFolder || !destinationFolder) {
-        alert("移動元と移動先のフォルダを指定してください。");
-        return;
-    }
-    
-    if (!fileListText.trim()) {
-        alert("移動するファイルがありません。");
-        return;
-    }
-    
-    if (renameEnabled && (!newFileName || !newFileName.trim())) {
-        alert("リネーム機能を有効にした場合は、新しいファイル名を入力してください。");
-        return;
-    }
-    
-    var fileNames = fileListText.split("\n").filter(function(name) {
-        return name.trim() !== "";
-    });
-    
-    if (fileNames.length === 0) {
-        alert("移動するファイルがありません。");
-        return;
-    }
-    
-    try {
-        // 移動先フォルダが存在しない場合は作成
-        if (!fso.FolderExists(destinationFolder)) {
-            if (destinationFolder.indexOf("\\") === -1) {
-                // パス区切りがない場合は日付フォルダとして処理
-                var parentFolder = document.getElementById("destinationFolder").value;
-                var dateFolder = getCurrentDate().replace(/\//g, "-");
-                destinationFolder = parentFolder + "\\" + dateFolder;
-            }
-            
-            createFolderRecursive(destinationFolder);
-        }
-        
-        var successCount = 0;
-        var errorMessages = [];
-        var fileCounter = 1;
-        
-        for (var i = 0; i < fileNames.length; i++) {
-            var fileName = fileNames[i].trim();
-            if (!fileName) continue;
-            
-            var sourcePath = sourceFolder + "\\" + fileName;
-            var destinationPath;
-            
-            if (!fso.FileExists(sourcePath)) {
-                errorMessages.push("ファイルが見つかりません: " + fileName);
-                continue;
-            }
-            
-            // ファイル名の決定
-            if (renameEnabled) {
-                var extension = fso.GetExtensionName(fileName);
-                var baseNewName = newFileName.trim();
-                var finalFileName;
-                
-                if (fileNames.length === 1) {
-                    // ファイルが1個の場合は連番なし
-                    finalFileName = extension ? baseNewName + "." + extension : baseNewName;
-                } else {
-                    // 複数ファイルの場合は連番付き
-                    finalFileName = extension ? baseNewName + " (" + fileCounter + ")." + extension : baseNewName + " (" + fileCounter + ")";
-                }
-                
-                destinationPath = destinationFolder + "\\" + finalFileName;
-                fileCounter++;
-            } else {
-                destinationPath = destinationFolder + "\\" + fileName;
-            }
-            
-            // 重複チェック（リネーム無効時のみ）
-            if (!renameEnabled && fso.FileExists(destinationPath)) {
-                errorMessages.push("ファイルが既に存在します: " + fileName + "\n（リネーム機能を有効にしてください）");
-                continue;
-            }
-            
-            try {
-                fso.MoveFile(sourcePath, destinationPath);
-                successCount++;
-            } catch (e) {
-                errorMessages.push("移動に失敗しました: " + fileName + " (" + e.message + ")");
-            }
-        }
-        
-        // 結果表示
-        var message = successCount + "個のファイルの移動が完了しました。";
-        if (errorMessages.length > 0) {
-            message += "\n\nエラー:\n" + errorMessages.join("\n");
-        }
-        alert(message);
-        
-        // 移動後にリスト更新
-        updateFileList();
-        
-    } catch (e) {
-        alert("移動処理中にエラーが発生しました: " + e.message);
-    }
-}
-
-// フォルダ再帰作成
+// フォルダ再帰作成（ローカル用の簡易版）
 function createFolderRecursive(folderPath) {
     var pathParts = folderPath.split("\\");
-    var currentPath = "";
-    
-    for (var i = 0; i < pathParts.length; i++) {
-        if (i === 0) {
-            currentPath = pathParts[i];
-        } else {
-            currentPath += "\\" + pathParts[i];
-        }
-        
+    var currentPath = pathParts[0]; // 例: C:
+    for (var i = 1; i < pathParts.length; i++) {
+        currentPath += "\\" + pathParts[i];
         if (currentPath.length > 3 && !fso.FolderExists(currentPath)) {
             fso.CreateFolder(currentPath);
         }
     }
 }
 
-// 重複ファイル名の処理（リネーム）
+// ユニーク名生成（既存を避ける）
 function getUniqueFileName(folderPath, fileName) {
     var baseName = fso.GetBaseName(fileName);
     var extension = fso.GetExtensionName(fileName);
-    var counter = 1;
+    var counter = 0;
     var newFileName = fileName;
-    
     while (fso.FileExists(folderPath + "\\" + newFileName)) {
-        if (extension) {
-            newFileName = baseName + "(" + counter + ")." + extension;
-        } else {
-            newFileName = baseName + "(" + counter + ")";
-        }
         counter++;
+        newFileName = extension ? (baseName + " (" + counter + ")." + extension)
+                                : (baseName + " (" + counter + ")");
     }
-    
     return folderPath + "\\" + newFileName;
 }
+
+// ファイル移動処理
+function startMove() {
+    var sourceFolder   = document.getElementById("sourceFolder").value;
+    var baseDestDir    = document.getElementById("destinationFolder").value;
+    var fileListText   = document.getElementById("fileList").value;
+    var renameEnabled  = document.getElementById("renameOption").checked;
+    var newFileName    = document.getElementById("newFileName").value;
+    
+    if (!notEmpty(sourceFolder) || !notEmpty(baseDestDir)) { alert("移動元と移動先のフォルダを指定してください。"); return; }
+    if (!notEmpty(fileListText)) { alert("移動するファイルがありません。"); return; }
+    if (renameEnabled && !notEmpty(newFileName)) { alert("リネーム機能を有効にした場合は、新しいファイル名を入力してください。"); return; }
+
+    // 日付フォルダを自動作成して、その配下に保存
+    var destinationDir = buildDateFolders(baseDestDir);
+
+    var fileNames = splitNonEmptyLines(fileListText);
+    if (fileNames.length === 0) { alert("移動するファイルがありません。"); return; }
+    
+    try {
+        var successCount = 0;
+        var errorMessages = [];
+        var fileCounter = 1;
+        
+        for (var i = 0; i < fileNames.length; i++) {
+            var fileName = fileNames[i];
+            var sourcePath = sourceFolder + "\\" + fileName;
+            var destinationPath;
+            
+            if (!fso.FileExists(sourcePath)) { errorMessages.push("ファイルが見つかりません: " + fileName); continue; }
+            
+            if (renameEnabled) {
+                var extension = fso.GetExtensionName(fileName);
+                var baseNewName = trim(newFileName);
+                var finalFileName = (fileNames.length === 1)
+                    ? (extension ? baseNewName + "." + extension : baseNewName)
+                    : (extension ? baseNewName + " (" + fileCounter + ")." + extension : baseNewName + " (" + fileCounter + ")");
+                destinationPath = getUniqueFileName(destinationDir, finalFileName);
+                fileCounter++;
+            } else {
+                destinationPath = destinationDir + "\\" + fileName;
+                if (fso.FileExists(destinationPath)) {
+                    errorMessages.push("ファイルが既に存在します: " + fileName + "（リネーム機能を有効にしてください）");
+                    continue;
+                }
+            }
+            
+            try { fso.MoveFile(sourcePath, destinationPath); successCount++; }
+            catch(e){ errorMessages.push("移動に失敗しました: " + fileName + " (" + e.message + ")"); }
+        }
+        
+        var message = successCount + "個のファイルの移動が完了しました。";
+        if (errorMessages.length > 0) message += "\n\nエラー:\n" + errorMessages.join("\n");
+        alert(message);
+        updateFileList();
+        
+    } catch (e) {
+        alert("移動処理中にエラーが発生しました: " + e.message);
+    }
+}
+window.onload = function () {
+  document.getElementById("dateField").value = getCurrentDate();
+
+  // 固定サイズ（好みで調整）
+  var W = 550, H = 700; // 横×縦ピクセル
+  window.resizeTo(W, H);
+
+  // 画面中央へ
+  var x = (screen.availWidth  - W) / 2;
+  var y = (screen.availHeight - H) / 2;
+  window.moveTo(x, y);
+};
 </script>
 </body>
 </html>
