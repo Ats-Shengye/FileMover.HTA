@@ -1,0 +1,7 @@
+# gitleaks local config (contains absolute paths)
+.gitleaks.toml
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
